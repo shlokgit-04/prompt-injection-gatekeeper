@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Prompt-Injection Gatekeeper</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+  :root{--bg:#0f1420;--panel:#171e2e;--line:#2a3348;--text:#e8ecf5;--dim:#93a0b8;
+        --green:#22c55e;--amber:#eab308;--red:#ef4444}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;margin:0;padding:24px;max-width:880px;margin-inline:auto}
+  h1{font-size:1.3rem} .sub{color:var(--dim);margin-top:-8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:16px}
+  input,button{font:inherit}
+  input{flex:1;background:#0c111c;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:10px}
+  button{background:#2f6fed;border:none;color:#fff;border-radius:8px;padding:10px 16px;cursor:pointer}
+  .row{display:flex;gap:10px;margin-top:8px}
+  .decide{border-radius:10px;padding:12px;margin-top:10px;font-weight:600}
+  .PROCEED{background:rgba(34,197,94,.12);border:1px solid var(--green)}
+  .CONFIRM{background:rgba(234,179,8,.12);border:1px solid var(--amber)}
+  .DENY{background:rgba(239,68,68,.12);border:1px solid var(--red)}
+  .meta{color:var(--dim);font-weight:400;font-size:.85rem}
+  table{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:8px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  .sig{color:var(--dim);font-size:.78rem;margin-top:6px}
+</style>
+</head>
+<body>
+<h1>Prompt-Injection Gatekeeper</h1>
+<p class="sub">Every agent tool call passes a Strands Decider 2B decision layer before it executes.</p>
+<div class="card">
+  <form id="f" class="row"><input id="m" placeholder="e.g. Read the supplier document and email me a summary" required/><button>Send</button></form>
+  <div id="out"></div>
+</div>
+<div class="card">
+  <b>Human approval queue</b>
+  <div id="pend"></div>
+</div>
+<div class="card">
+  <b>Audit log</b>
+  <table><thead><tr><th>time</th><th>tool</th><th>decision</th><th>confidence</th><th>status</th></tr></thead><tbody id="log"></tbody></table>
+</div>
+<script>
+const dot={PROCEED:"🟢 PROCEED",CONFIRM:"🟡 HUMAN APPROVAL",DENY:"🔴 DENIED"};
+async function refresh(){
+  const log=await (await fetch("/audit")).json();
+  document.querySelector("#log").innerHTML=log.slice(0,25).map(e=>{
+    const d=e.decision||{};const act=d.action||"";
+    return `<tr><td>${e.timestamp}</td><td>${e.tool}</td><td>${dot[act]||e.execution}</td><td>${d.confidence??"-"}</td><td>${e.outcome}</td></tr>`}).join("");
+  const p=await (await fetch("/pending")).json();
+  document.querySelector("#pend").innerHTML=p.length?p.map(i=>`
+    <div class="decide CONFIRM">Approval ${i.id}: <code>${i.tool}</code> ${JSON.stringify(i.arguments)}
+      <span class="meta">confidence ${i.decision.confidence}</span>
+      <div class="row"><button onclick="act('${i.id}',true)">Approve</button><button onclick="act('${i.id}',false)" style="background:#6b7280">Reject</button></div>
+    </div>`).join(""):"<div class='meta'>nothing pending</div>";
+}
+async function act(id,ok){await fetch(`/pending/${id}/${ok?"approve":"reject"}`,{method:"POST"});refresh();}
+document.querySelector("#f").onsubmit=async ev=>{
+  ev.preventDefault();const m=document.querySelector("#m").value;
+  document.querySelector("#out").innerHTML="<div class='meta'>agent working...</div>";
+  const r=await (await fetch("/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({message:m})})).json();
+  const d=r.decision||{};
+  document.querySelector("#out").innerHTML=`
+    <div class="decide ${d.action||"DENY"}">${d.action?dot[d.action]:dot.DENY}
+      <div class="meta">${d.reason||r.detail||r.error||""} ${d.confidence?"confidence "+d.confidence:""} ${d.latency_ms?"· decision took "+d.latency_ms+" ms":""}</div>
+      <div class="sig">${d.signals?Object.entries(d.signals).map(([k,v])=>k.replace("q_","")+" "+v).join(" · "):""}</div>
+    </div>
+    <div>${r.response?("<p>"+r.response+"</p>"):r.status==="approval_required"?"<p class='meta'>Call parked above until you approve it.</p>":""}`;
+  refresh();
+};
+refresh();
+</script>
+</body>
+</html>
