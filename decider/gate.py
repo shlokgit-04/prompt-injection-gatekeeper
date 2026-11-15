@@ -31,12 +31,13 @@ class Decision:
     signals: dict = field(default_factory=dict)
     latency_ms: float = 0.0
     error: str | None = None
+    engine: str = "decider-2b"
 
     def to_dict(self) -> dict:
         return {
             "action": self.action, "confidence": round(self.confidence, 4),
             "reason": self.reason, "signals": {k: round(v, 4) for k, v in self.signals.items()},
-            "latency_ms": round(self.latency_ms, 1), "error": self.error,
+            "latency_ms": round(self.latency_ms, 1), "error": self.error, "engine": self.engine,
         }
 
 

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Privacy · Prompt-Injection Gatekeeper</title>
+<link rel="stylesheet" href="app.css"/>
+</head>
+<body>
+<div class="topbar"><div class="brand">Prompt-Injection Gatekeeper</div><div class="nav"><a href="index.html">Console</a><a href="about.html">About</a></div></div>
+<div class="wrap" style="max-width:720px">
+  <div class="card">
+    <h1>Privacy policy</h1>
+    <p class="sub">Last updated: November 16, 2026</p>
+    <h2 style="margin-top:16px">What we collect</h2>
+    <p>Your email address and a bcrypt hash of your password. Nothing else at sign-up. While you use the console, we store the requests you run, the tool calls proposed for them, every decision the security layer made (including its signals and reasons), the approval queue, the demo outbox, and your policy thresholds. All of it is scoped to your account.</p>
+    <h2>What we do not do</h2>
+    <p>No advertising, no analytics, no tracking, no selling or sharing of your data with third parties. The demo email tool never sends real mail: it writes to an outbox visible only to your account.</p>
+    <h2>Passwords and sessions</h2>
+    <p>Passwords are hashed with bcrypt and never stored or logged in plain text. Sessions are signed tokens valid 30 days. Changing nothing, you can revoke a session by deleting your account.</p>
+    <h2>Your controls</h2>
+    <p>Export everything your account holds as JSON from the console ("Download my data"). Deleting your account erases your user row and every audit event, approval, message and outbox entry tied to it, immediately and irreversibly.</p>
+    <h2>Demo data</h2>
+    <p>The supplier invoice, vendor terms and customer database are fictional demo data shared read-only by all accounts.</p>
+    <h2>Contact</h2>
+    <p>Built by <a href="https://shlok.is-a.dev">Shlok V.</a> Questions about this policy: reach him via the portfolio site.</p>
+  </div>
+</div>
+</body>
+</html>

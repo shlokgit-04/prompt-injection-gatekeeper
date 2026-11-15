@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>About · Prompt-Injection Gatekeeper</title>
+<link rel="stylesheet" href="app.css"/>
+</head>
+<body>
+<div class="topbar"><div class="brand">Prompt-Injection Gatekeeper</div><div class="nav"><a href="index.html">Console</a><a href="privacy.html">Privacy</a></div></div>
+<div class="wrap" style="max-width:720px">
+  <div class="card">
+    <h1>About</h1>
+    <p class="sub">A security/decision layer for AI agents, built for the AWS Agent Experience Hackathon 2026.</p>
+    <h2 style="margin-top:16px">What it does</h2>
+    <p>Agents can be hijacked: an untrusted document, email or web page can carry hidden instructions that make the agent leak data or take actions the user never asked for. This layer sits at the tool boundary. Every proposed tool call is evaluated before it executes: PROCEED runs and is audited, CONFIRM parks for a human in the approval queue, DENY never reaches the real tool. On any failure the layer fails closed.</p>
+    <h2>The decision layer</h2>
+    <p>The intended engine is <strong>Strands Decider 2B</strong>, a 2B-parameter decision model served locally, answering seven typed yes/no questions per call with calibrated probabilities, mapped onto the three actions by a policy with configurable thresholds. Where the model server is not attached (this hosted demo), a clearly labeled deterministic signature engine takes over: it flags exfiltration markers, unnamed recipients, ungrounded queries and instruction directives hidden in documents, and everything it cannot classify fails closed to human approval. Every decision records which engine produced it; the fallback never presents itself as the model.</p>
+    <h2>Security model</h2>
+    <p>Real accounts with bcrypt-hashed passwords and signed sessions; per-user data isolation on every endpoint; the tool registry holds only gated wrappers, so there is no path from a tool choice to a real function that bypasses the gate; append-only audit log with secret redaction; rate limits; read-only demo database; the demo mail tool writes to an internal outbox only. No system is 100% secure; this layer constrains a class of prompt-injection failures and logs everything it does.</p>
+    <h2>Credits</h2>
+    <p>Made by <a href="https://shlok.is-a.dev">Shlok V.</a></p>
+  </div>
+  <p class="foot"><a href="privacy.html">Privacy</a> · <a href="https://github.com/shlokgit-04/prompt-injection-gatekeeper">Source</a></p>
+</div>
+</body>
+</html>

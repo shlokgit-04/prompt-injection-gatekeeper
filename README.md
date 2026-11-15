@@ -34,6 +34,31 @@ call never reaches a real tool, and every interception is audited.
   runs and is audited. On any decider failure the gate fails CLOSED to
   CONFIRM. Nothing asks the main LLM "is this safe?".
 
+## Hosted demo mode (this deployment)
+
+The hosted build runs without the Decider 2B model server (it needs a local
+4.5 GB checkpoint) and without AWS Bedrock credentials. It is still the same
+security architecture, with the engine swap stated plainly:
+
+- With `STRANDS_DECIDER_URL` set and the model server reachable, every signal
+  is a real Decider 2B probability (engine `decider-2b`).
+- Without it, a deterministic signature engine (`decider/fallback.py`,
+  engine `signature-fallback`) decides: it flags exfiltration markers, email
+  recipients never named in the request, non-SELECT queries, ungrounded
+  document reads, and instruction directives hidden in document content.
+  Anything it cannot classify fails closed to CONFIRM. It is NOT the model
+  and never presents itself as one; every decision records which engine made it.
+- Tool-call proposals come from `agent/proposer.py`: with no main LLM attached
+  it derives proposals deterministically from the request and the documents
+  read during the run (scripted proposal mode). With `OPENROUTER_API_KEY` set,
+  the agent loop runs on a zero-cost OpenRouter model instead; `GET /api/models`
+  exposes the server-enforced model list only when the key is configured.
+
+Full accounts (bcrypt + signed sessions), per-user audit / approvals / messages
+/ outbox / policy in SQLite, rate limits, security headers, and a locked CORS
+list are part of the hosted build; the local Strands + Bedrock path in
+`agent/main.py` is unchanged for deployments that have both.
+
 ## The decision, exactly
 
 ```

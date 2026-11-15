@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Create account · Prompt-Injection Gatekeeper</title>
+<link rel="stylesheet" href="app.css"/>
+</head>
+<body>
+<div class="topbar"><div class="brand">Prompt-Injection Gatekeeper</div><div class="nav"><a href="login.html">Sign in</a></div></div>
+<div class="wrap" style="max-width:420px">
+  <div class="card">
+    <h1>Create account</h1>
+    <p class="sub">Email + password only. Nothing else is collected (see <a href="privacy.html">privacy</a>).</p>
+    <form id="f">
+      <div class="row"><input id="email" type="email" placeholder="Email" required autocomplete="email"/></div>
+      <div class="row"><input id="pw" type="password" placeholder="Password (min 8 characters)" required minlength="8" autocomplete="new-password"/></div>
+      <div class="row"><button style="width:100%">Create account</button></div>
+    </form>
+    <div id="msg"></div>
+  </div>
+</div>
+<script src="config.js"></script>
+<script>
+document.querySelector("#f").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const r=await fetch(config.API_BASE+"/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({email:document.querySelector("#email").value.trim(),password:document.querySelector("#pw").value})});
+  const d=await r.json();
+  if(r.status===200){localStorage.setItem("pg_token",d.token);location.href="index.html";}
+  else document.querySelector("#msg").innerHTML=`<div class="msg err">${d.error||"Sign-up failed"}</div>`;
+});
+</script>
+</body>
+</html>

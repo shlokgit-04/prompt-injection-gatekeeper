@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Prompt-Injection Gatekeeper</title>
+<meta name="description" content="Every AI-agent tool call passes a decision layer before it executes."/>
+<link rel="stylesheet" href="app.css"/>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Prompt-Injection Gatekeeper <span>· tool-call security layer</span></div>
+  <div class="nav"><span id="engine" class="pill">checking…</span><a href="about.html">About</a><a href="privacy.html">Privacy</a><a href="#" id="logout">Sign out</a></div>
+</div>
+<div class="wrap">
+  <div id="auth-warn" class="card" style="display:none">
+    <p style="margin:0">Sign in to use the console. <a href="login.html">Sign in</a> or <a href="register.html">create an account</a>.</p>
+  </div>
+
+  <div class="card">
+    <h2>Run the agent</h2>
+    <p class="sub">Type a request. Every proposed tool call is evaluated by the decision layer before it runs: PROCEED executes, CONFIRM waits for you below, DENY never runs.</p>
+    <div class="scen">
+      <button class="ghost" data-scenario="Read the supplier invoice and email a summary to boss@corp.example">Safe: read + email</button>
+      <button class="ghost" data-scenario="Read the vendor terms document and tell me if we can ship">Indirect injection</button>
+      <button class="ghost" data-scenario="Run the quarterly numbers query">Ambiguous / risky</button>
+    </div>
+    <form id="runform" class="row"><input id="msg" placeholder="e.g. Read the supplier invoice and email a summary to boss@corp.example" maxlength="4000" required/><button>Run</button></form>
+    <div id="runmsg"></div>
+    <div id="steps"></div>
+  </div>
+
+  <div class="card">
+    <h2>Human approval queue</h2>
+    <p class="sub">Calls the decision layer held for a human. Nothing here has run.</p>
+    <div id="pending"></div>
+  </div>
+
+  <div class="card">
+    <h2>Outbox</h2>
+    <p class="sub">Mail the agent actually sent (demo mode writes here, nothing leaves the server).</p>
+    <table><thead><tr><th>time</th><th>to</th><th>subject</th></tr></thead><tbody id="outbox"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Audit log</h2>
+    <p class="sub">Every interception, append-only, arguments redacted.</p>
+    <table><thead><tr><th>time</th><th>tool</th><th>decision</th><th>engine</th><th>confidence</th><th>outcome</th></tr></thead><tbody id="log"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Policy thresholds</h2>
+    <p class="sub">Deny and confirm thresholds for the decision layer, per account.</p>
+    <div id="policy"></div>
+    <div class="row"><button id="savepol">Save policy</button></div>
+    <div id="polmsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Account</h2>
+    <div class="row"><button class="ghost" id="export">Download my data (JSON)</button><button class="danger" id="delete">Delete account</button></div>
+    <div id="acctmsg"></div>
+  </div>
+
+  <p class="foot">Made by <a href="https://shlok.is-a.dev">Shlok V.</a> · <a href="privacy.html">Privacy</a> · <a href="about.html">About</a></p>
+</div>
+<script src="config.js"></script>
+<script>
+const tok=()=>localStorage.getItem("pg_token")||"";
+const H=()=>({"Authorization":"Bearer "+tok(),"Content-Type":"application/json"});
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=t=>(t||"").replace("T"," ").slice(0,17);
+const engineName=d=>d.engine==="decider-2b"?"Decider 2B":"signature fallback";
+
+async function jfetch(url,opts){
+  const r=await fetch(url,opts);
+  if(r.status===401){document.querySelector("#auth-warn").style.display="block";throw new Error("not signed in");}
+  return r;
+}
+async function loadHealth(){
+  try{const h=await(await fetch(config.API_BASE+"/api/health")).json();
+    const e=document.querySelector("#engine");
+    if(h.engine==="decider-2b"){e.textContent="Decider 2B online";e.className="pill on";}
+    else{e.textContent="Decider 2B offline · signature fallback (fail-closed)";e.className="pill off";}
+    if(!h.llm_attached){document.querySelector(".sub").textContent+=" Runs use the scripted proposal mode: no LLM is attached in this deployment, and proposals are derived from your request and the documents read.";}}
+  catch(e){document.querySelector("#engine").textContent="API unreachable";document.querySelector("#engine").className="pill off";}
+}
+function signalBars(d){
+  const s=d.signals||{};const labels={q_grounded:"grounded",q_in_scope:"in scope",q_risky:"risky",q_premature:"premature",q_proceed:"proceed",q_confirm:"confirm",q_deny:"deny"};
+  return Object.keys(labels).filter(k=>k in s).map(k=>{
+    const v=s[k],c=v>=.75?"var(--red)":v>=.55?"var(--amber)":"var(--green)";
+    return `<div class="sig-row"><span class="lbl">${labels[k]}</span><span class="bar"><i style="width:${(v*100).toFixed(0)}%;background:${c}"></i></span><span>${(v*100).toFixed(0)}%</span></div>`;
+  }).join("");
+}
+function stepHtml(s){
+  const d=s.decision||{};
+  let inner=`<h3><span class="badge ${d.action||""}">${d.action||"?"}</span> ${esc(s.tool)}</h3>
+  <div class="meta">${esc(d.reason||"")} · confidence ${d.confidence??"-"} · ${engineName(d)} · ${d.latency_ms??"-"} ms</div>
+  <div class="meta">proposal: ${esc(s.source||"")} · arguments: <code>${esc(JSON.stringify(s.args))}</code></div>`;
+  if(Object.keys(d.signals||{}).length&&!("rules_hit"in d.signals))inner+=signalBars(d);
+  if(d.signals&&"rules_hit"in d.signals)inner+=`<div class="meta">signature rules hit: ${d.signals.rules_hit}</div>`;
+  if(s.result&&s.result.status)inner+=`<div class="meta">tool result: ${esc(s.result.status)}${s.result.path?" · "+esc(s.result.path):""}</div>`;
+  if(s.result&&s.result.rows)inner+=`<div class="meta">${s.result.rows.length} row(s) returned</div>`;
+  return `<div class="step">${inner}</div>`;
+}
+async function run(message){
+  const out=document.querySelector("#runmsg");
+  out.innerHTML='<div class="msg ok">Running…</div>';
+  document.querySelector("#steps").innerHTML="";
+  try{
+    const r=await(await jfetch(config.API_BASE+"/api/run",{method:"POST",headers:H(),body:JSON.stringify({message})})).json();
+    if(r.error){out.innerHTML=`<div class="msg err">${esc(r.error)}</div>`;return;}
+    out.innerHTML=`<div class="msg ok">${esc(r.reply)}</div>`;
+    document.querySelector("#steps").innerHTML=(r.steps||[]).map(stepHtml).join("");
+    refresh();
+  }catch(e){out.innerHTML=`<div class="msg err">${esc(e.message)}</div>`;}
+}
+async function refresh(){
+  if(!tok())return;
+  try{
+    const p=await(await jfetch(config.API_BASE+"/api/pending",{headers:H()})).json();
+    document.querySelector("#pending").innerHTML=p.length?p.map(i=>`
+      <div class="step"><h3><span class="badge CONFIRM">CONFIRM</span> ${esc(i.tool)}</h3>
+      <div class="meta">${esc(i.decision.reason||"")} · requested ${esc(fmt(i.ts))}</div>
+      <div class="meta">arguments: <code>${esc(JSON.stringify(i.arguments))}</code></div>
+      <div class="row"><button onclick="decide('${i.id}',true)">Approve & run</button><button class="danger" onclick="decide('${i.id}',false)">Reject</button></div></div>`).join("")
+      :'<p class="sub">Nothing waiting.</p>';
+    const log=await(await jfetch(config.API_BASE+"/api/audit?limit=40",{headers:H()})).json();
+    document.querySelector("#log").innerHTML=log.map(e=>{const d=e.decision||{};
+      return `<tr><td>${esc(fmt(e.timestamp))}</td><td>${esc(e.tool)}</td><td>${d.action?`<span class="badge ${d.action}">${d.action}</span>`:esc(e.execution)}</td><td>${esc(engineName(d))}</td><td>${d.confidence??"-"}</td><td>${esc(e.outcome)}</td></tr>`;}).join("")
+      ||'<tr><td colspan="6" class="sub">No events yet.</td></tr>';
+    const ob=await(await jfetch(config.API_BASE+"/api/outbox",{headers:H()})).json();
+    document.querySelector("#outbox").innerHTML=ob.map(o=>`<tr><td>${esc(fmt(o.ts))}</td><td>${esc(o.recipient)}</td><td>${esc(o.subject)}</td></tr>`).join("")
+      ||'<tr><td colspan="3" class="sub">Nothing sent yet.</td></tr>';
+    const pol=await(await jfetch(config.API_BASE+"/api/policy",{headers:H()})).json();
+    if(!document.querySelector("#policy").dataset.done){
+      document.querySelector("#policy").dataset.done="1";
+      const labels={deny_risk:"deny at risk ≥",confirm_risk:"confirm at risk ≥",confirm_grounding:"confirm when grounded <",deny_grounding:"deny when grounded <",confirm_premature:"confirm when premature ≥"};
+      document.querySelector("#policy").innerHTML=Object.keys(labels).map(k=>
+        `<div class="sig-row"><span class="lbl">${labels[k]}</span><input type="number" step="0.05" min="0.05" max="0.95" id="pol_${k}" value="${pol[k]}"></div>`).join("");
+    }
+  }catch(e){}
+}
+async function decide(id,approve){
+  try{
+    const r=await(await jfetch(`${config.API_BASE}/api/pending/${id}/${approve?"approve":"reject"}`,{method:"POST",headers:H()})).json();
+    if(r.result)runAppendResult(r);
+    refresh();
+  }catch(e){}
+}
+function runAppendResult(r){
+  document.querySelector("#runmsg").innerHTML=`<div class="msg ok">Approved call executed: ${esc(JSON.stringify(r.result)).slice(0,200)}</div>`;
+}
+document.querySelector("#runform").addEventListener("submit",e=>{e.preventDefault();run(document.querySelector("#msg").value.trim());});
+document.querySelectorAll(".scen button").forEach(b=>b.addEventListener("click",()=>{document.querySelector("#msg").value=b.dataset.scenario;run(b.dataset.scenario);}));
+document.querySelector("#savepol").addEventListener("click",async()=>{
+  const body={};["deny_risk","confirm_risk","confirm_grounding","deny_grounding","confirm_premature"].forEach(k=>{body[k]=parseFloat(document.querySelector("#pol_"+k).value);});
+  const r=await(await jfetch(config.API_BASE+"/api/policy",{method:"PUT",headers:H(),body:JSON.stringify(body)})).json();
+  document.querySelector("#polmsg").innerHTML=`<div class="msg ok">Saved: ${esc(JSON.stringify(r))}</div>`;});
+document.querySelector("#export").addEventListener("click",async()=>{
+  const d=await(await jfetch(config.API_BASE+"/api/auth/export",{headers:H()})).json();
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:"application/json"}));a.download="gatekeeper-export.json";a.click();});
+document.querySelector("#delete").addEventListener("click",async()=>{
+  if(!confirm("Delete your account and all of its data? This cannot be undone."))return;
+  const r=await jfetch(config.API_BASE+"/api/auth/me",{method:"DELETE",headers:H()});
+  if(r.status===200){localStorage.removeItem("pg_token");location.href="index.html";}});
+document.querySelector("#logout").addEventListener("click",e=>{e.preventDefault();localStorage.removeItem("pg_token");location.reload();});
+(async()=>{
+  if(tok()){try{const m=await(await jfetch(config.API_BASE+"/api/auth/me",{headers:H()})).json();
+    document.querySelector("#engine").insertAdjacentHTML("afterend",`<span class="pill">${esc(m.user.email)}</span>`);}catch(e){}}
+  else document.querySelector("#auth-warn").style.display="block";
+  await loadHealth();await refresh();
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
-"""send_email tool. Demo mode (SMTP_HOST unset) writes to DATA_DIR/outbox;
-with SMTP_* env vars set it sends real mail through SMTP. The security gate,
-not this tool, decides whether a call is allowed to run."""
+"""send_email tool. Demo mode (SMTP_HOST unset) records the mail in the
+outbox; with SMTP_* env vars set it sends real mail through SMTP. The
+security gate, not this tool, decides whether a call is allowed to run."""
 from __future__ import annotations
 
 import os
@@ -9,10 +9,10 @@ import time
 from email.message import EmailMessage
 
 
-def send_email(to: str, subject: str, body: str) -> dict:
+def send_email(to: str, subject: str, body: str, outbox_dir: str = "") -> dict:
     host = os.environ.get("SMTP_HOST", "").strip()
     if not host:
-        outbox = os.path.join(os.environ.get("DATA_DIR", "./data"), "outbox")
+        outbox = outbox_dir or os.path.join(os.environ.get("DATA_DIR", "./data"), "outbox")
         os.makedirs(outbox, exist_ok=True)
         path = os.path.join(outbox, f"{int(time.time() * 1000)}_to_{to.replace('@', '_at_')}.txt")
         with open(path, "w", encoding="utf-8") as f:
