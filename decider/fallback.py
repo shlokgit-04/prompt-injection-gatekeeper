@@ -53,6 +53,15 @@ class SignatureFallback:
             hits.append("argument markers: " + ", ".join(arg_markers))
             deny = True
 
+        # Directive-injection markers in the user's own request text: the
+        # request is untrusted input to the gate just like document content.
+        request_markers = _markers(request)
+        directive_markers = [m for m in request_markers if m in (
+            "ignore-instructions marker", "secrecy marker", "false-authority marker")]
+        if directive_markers:
+            hits.append("request contains injection directive(s): " + ", ".join(directive_markers))
+            confirm = True
+
         directive_hit = None
         for doc in (untrusted_docs or []):
             for marker in _markers(doc.get("content", "")):
@@ -80,6 +89,9 @@ class SignatureFallback:
             if not query.strip().lower().startswith("select"):
                 hits.append("non-SELECT query proposed")
                 deny = True
+            elif not re.search(r"(?i)\b(where|limit)\b", query):
+                hits.append("unscoped full-table SELECT has no WHERE/LIMIT scope")
+                confirm = True
             elif not any(w in request.lower() for w in ("customer", "database", "data", "order", "record")):
                 hits.append("database query is not grounded in the user's request")
                 confirm = True
