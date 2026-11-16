@@ -2,3 +2,6 @@
 const API_BASE = location.origin.includes("localhost") || location.hostname === "127.0.0.1"
   ? "http://127.0.0.1:8000"
   : "https://prompt-injection-gatekeeper.onrender.com";
+
+// The pages reference config.API_BASE; keep both names valid.
+const config = { API_BASE };
